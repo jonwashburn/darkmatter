@@ -54,9 +54,11 @@ DRIFT_DWARF = 0.10  # fractional non-circular (asymmetric drift) for dwarfs
 DRIFT_SPIRAL = 0.05 # fractional non-circular for spirals
 HZ_RATIO = 0.25   # global h_z / R_d
 ML_DISK_VALUES = [1.0, 1.2]  # test no-scale and modest global disk M/L
-K_TURB = 0.05  # global outer-disk turbulence fraction
-P_TURB = 1.7   # global radial shape exponent for turbulence
+K_TURB = 0.07  # global outer-disk turbulence fraction (locked)
+P_TURB = 1.3   # global radial shape exponent for turbulence (locked)
 G_EXT_TESTS = [0.0, 0.03, 0.05]  # external field fraction of a0 (global)
+ZCAP_MIN = 0.8
+ZCAP_MAX = 1.2
 
 
 def collect_T_ref(master_table: Dict[str, Any]) -> float:
@@ -131,7 +133,7 @@ def zeta_vertical(r_kpc: np.ndarray, R_d_kpc: float) -> np.ndarray:
     x = r / R_d
     f_profile = np.exp(-x / 2.0) * (1.0 + x / 3.0)
     zeta = 1.0 + 0.5 * (h_z / (r + 0.1 * R_d)) * f_profile
-    return np.clip(zeta, 0.8, 1.2)
+    return np.clip(zeta, ZCAP_MIN, ZCAP_MAX)
 
 
 def sigma_components(df, r_kpc: np.ndarray, v_obs_kms: np.ndarray, distance_mpc: float, galaxy_type: str, R_d_kpc: float, idx_mask: np.ndarray | None = None) -> np.ndarray:
@@ -453,8 +455,8 @@ def main() -> None:
     print(f"Saved: {summary_csv}")
 
     # Choose best median and best mean variants for detailed per-galaxy CSVs
-    # Best median observed earlier: accel, with n, xi, ml=1.2; Best mean: accel, n=1, xi, ml=1.0
-    best_median_results, best_median_summary = evaluate_detailed(master_table, kernel='accel', use_n_profile=True, use_xi=True, ml_disk=1.2)
+    # Locked defaults: accel, with n, xi, ml=1.0
+    best_median_results, best_median_summary = evaluate_detailed(master_table, kernel='accel', use_n_profile=True, use_xi=True, ml_disk=1.0)
     best_mean_results, best_mean_summary = evaluate_detailed(master_table, kernel='accel', use_n_profile=False, use_xi=True, ml_disk=1.0)
 
     def write_per_gal(fname: Path, results: list, summary: Dict[str, Any]):
@@ -470,6 +472,55 @@ def main() -> None:
 
     write_per_gal(results_dir / "ilg_best_median_per_galaxy.csv", best_median_results, best_median_summary)
     write_per_gal(results_dir / "ilg_best_mean_per_galaxy.csv", best_mean_results, best_mean_summary)
+
+    # Optional ablation mode (env var or flag-free trigger by default last step)
+    # Minimal internal ablation: stepwise enabling of n, xi, drift, mask, zcap, turb
+    steps = [
+        ("base",              dict(n=False, xi=False, ml=1.0, turb=False, drift=False, mask=False, zcap=False)),
+        ("+ n(r)",            dict(n=True,  xi=False, ml=1.0, turb=False, drift=False, mask=False, zcap=False)),
+        ("+ xi",              dict(n=True,  xi=True,  ml=1.0, turb=False, drift=False, mask=False, zcap=False)),
+        ("+ drift",           dict(n=True,  xi=True,  ml=1.0, turb=False, drift=True,  mask=False, zcap=False)),
+        ("+ mask",            dict(n=True,  xi=True,  ml=1.0, turb=False, drift=True,  mask=True,  zcap=False)),
+        ("+ zcap",            dict(n=True,  xi=True,  ml=1.0, turb=False, drift=True,  mask=True,  zcap=True)),
+        ("+ turb (k=0.07,p=1.3)", dict(n=True,  xi=True,  ml=1.0, turb=True,  drift=True,  mask=True,  zcap=True)),
+    ]
+    # Save and restore globals used in toggles
+    K_old, P_old = K_TURB, P_TURB
+    DD_old, DS_old = DRIFT_DWARF, DRIFT_SPIRAL
+    BA_old = BEAM_ARCSEC
+    ZMIN_old, ZMAX_old = ZCAP_MIN, ZCAP_MAX
+
+    ablation_rows = []
+    for tag, cfg in steps:
+        # apply toggles
+        # turbulence
+        globals()["K_TURB"], globals()["P_TURB"] = (0.0, 1.0) if not cfg["turb"] else (0.07, 1.3)
+        # drift
+        globals()["DRIFT_DWARF"], globals()["DRIFT_SPIRAL"] = ((0.0, 0.0) if not cfg["drift"] else (0.10, 0.05))
+        # mask
+        globals()["BEAM_ARCSEC"] = (0.0 if not cfg["mask"] else 15.0)
+        # zcap
+        globals()["ZCAP_MIN"], globals()["ZCAP_MAX"] = ((0.5, 1.5) if not cfg["zcap"] else (0.8, 1.2))
+        # evaluate best kernel (accel)
+        out = evaluate_variant_accel(master_table, use_n_profile=cfg["n"], use_xi=cfg["xi"], ml_disk=cfg["ml"], g_ext_frac=0.0)
+        s = out["summary"]
+        ablation_rows.append([tag, s["chi2_reduced_median"], s["chi2_reduced_mean"]])
+        print(f"Ablation {tag:20s} -> median {s['chi2_reduced_median']:.3f}, mean {s['chi2_reduced_mean']:.3f}")
+
+    # restore
+    globals()["K_TURB"], globals()["P_TURB"] = K_old, P_old
+    globals()["DRIFT_DWARF"], globals()["DRIFT_SPIRAL"] = DD_old, DS_old
+    globals()["BEAM_ARCSEC"] = BA_old
+    globals()["ZCAP_MIN"], globals()["ZCAP_MAX"] = ZMIN_old, ZMAX_old
+
+    # write ablation csv
+    abl_csv = results_dir / "ilg_ablation.csv"
+    with open(abl_csv, 'w', newline='') as f:
+        import csv
+        w = csv.writer(f)
+        w.writerow(["step","chi2_median","chi2_mean"])
+        w.writerows(ablation_rows)
+    print(f"Saved: {abl_csv}")
 
 
 if __name__ == "__main__":
