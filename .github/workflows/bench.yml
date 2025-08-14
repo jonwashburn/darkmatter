@@ -1,0 +1,49 @@
+name: Global Benchmarks
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run ILG solver (summaries, ablation, plots)
+        run: |
+          python scripts/ilg_pure_solver.py
+
+      - name: Run global benchmark (RS vs MOND)
+        run: |
+          python scripts/bench_global_comparison.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: results
+          path: |
+            results/bench_global_summary.csv
+            results/bench_rs_per_galaxy.csv
+            results/bench_mond_per_galaxy.csv
+            results/ilg_variants_summary.csv
+            results/ilg_ablation.csv
+            results/ilg_best_median_per_galaxy.csv
+            results/ilg_best_mean_per_galaxy.csv
+            results/ilg_resid_vs_vmean.png
+            results/ilg_chi2_dwarf_spiral.png
+            results/ilg_ablation_bar.png
+
+

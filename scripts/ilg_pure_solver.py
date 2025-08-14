@@ -31,6 +31,9 @@ from pathlib import Path
 from typing import Dict, Any, Tuple
 import numpy as np
 import csv
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 # Global constants
 ALPHA = 0.191
@@ -521,6 +524,53 @@ def main() -> None:
         w.writerow(["step","chi2_median","chi2_mean"])
         w.writerows(ablation_rows)
     print(f"Saved: {abl_csv}")
+
+    # Figures: (1) v_obs_mean vs resid_rms (dwarf vs spiral) for locked best config
+    #          (2) chi2 hist dwarf vs spiral
+    #          (3) Ablation bar of chi2_median
+    # Best config details
+    best_res = best_median_results
+    names = [r['name'] for r in best_res]
+    vmeans = np.array([r['v_obs_mean'] for r in best_res])
+    resid = np.array([r['resid_rms'] for r in best_res])
+    dwarfs = vmeans < 80.0
+    # (1) scatter
+    plt.figure(figsize=(6,4))
+    plt.scatter(vmeans[dwarfs], resid[dwarfs], s=18, c='#1f77b4', label='dwarfs')
+    plt.scatter(vmeans[~dwarfs], resid[~dwarfs], s=18, c='#ff7f0e', label='spirals')
+    plt.xlabel('Mean observed velocity [km/s]')
+    plt.ylabel('Residual RMS [km/s]')
+    plt.grid(alpha=0.3)
+    plt.legend()
+    fig1 = results_dir / 'ilg_resid_vs_vmean.png'
+    plt.tight_layout(); plt.savefig(fig1, dpi=160)
+    print(f"Saved: {fig1}")
+    plt.close()
+    # (2) chi2 hist dwarf vs spiral
+    chis = np.array([r['chi2_reduced'] for r in best_res])
+    plt.figure(figsize=(6,4))
+    plt.hist(chis[dwarfs], bins=20, alpha=0.6, label='dwarfs')
+    plt.hist(chis[~dwarfs], bins=20, alpha=0.6, label='spirals')
+    plt.xlabel('Reduced chi-squared')
+    plt.ylabel('Count')
+    plt.grid(alpha=0.3)
+    plt.legend()
+    fig2 = results_dir / 'ilg_chi2_dwarf_spiral.png'
+    plt.tight_layout(); plt.savefig(fig2, dpi=160)
+    print(f"Saved: {fig2}")
+    plt.close()
+    # (3) Ablation bar
+    steps_lbl = [row[0] for row in ablation_rows]
+    chi_med = [row[1] for row in ablation_rows]
+    plt.figure(figsize=(8,4))
+    plt.bar(range(len(steps_lbl)), chi_med, color='#2ca02c')
+    plt.xticks(range(len(steps_lbl)), steps_lbl, rotation=30, ha='right')
+    plt.ylabel('Median chi-squared/N')
+    plt.grid(axis='y', alpha=0.3)
+    fig3 = results_dir / 'ilg_ablation_bar.png'
+    plt.tight_layout(); plt.savefig(fig3, dpi=160)
+    print(f"Saved: {fig3}")
+    plt.close()
 
 
 if __name__ == "__main__":
