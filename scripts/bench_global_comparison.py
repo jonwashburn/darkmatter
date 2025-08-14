@@ -137,12 +137,17 @@ def main():
     with open(RESULTS / 'bench_global_summary.csv', 'w', newline='') as f:
         w = csv.writer(f)
         w.writerow(['model','N_gal','chi2_median','chi2_mean'])
-        w.writerow(['RS_global', rs_summary['N_galaxies'], rs_summary['chi2_reduced_median'], rs_summary['chi2_reduced_mean']])
+        w.writerow(['RS_global', len(rs_rows), rs_summary['chi2_reduced_median'], rs_summary['chi2_reduced_mean']])
         w.writerow(['MOND_global', mond_summary['N_galaxies'], mond_summary['chi2_reduced_median'], mond_summary['chi2_reduced_mean']])
 
     print('Saved:', RESULTS / 'bench_global_summary.csv')
     print('Saved:', RESULTS / 'bench_rs_per_galaxy.csv')
     print('Saved:', RESULTS / 'bench_mond_per_galaxy.csv')
+    
+    # Print summary
+    print('\n=== GLOBAL COMPARISON (NO PER-GALAXY TUNING) ===')
+    print(f'RS Model:   N={len(rs_rows):3d}  median χ²/N={rs_summary["chi2_reduced_median"]:.2f}  mean χ²/N={rs_summary["chi2_reduced_mean"]:.2f}')
+    print(f'MOND Model: N={mond_summary["N_galaxies"]:3d}  median χ²/N={mond_summary["chi2_reduced_median"]:.2f}  mean χ²/N={mond_summary["chi2_reduced_mean"]:.2f}')
 
 
 if __name__ == '__main__':
