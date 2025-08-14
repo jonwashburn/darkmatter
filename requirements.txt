@@ -1,0 +1,11 @@
+# Runtime
+numpy==1.26.4
+scipy==1.13.1
+matplotlib==3.8.4
+pandas==2.2.2
+
+# Testing
+pytest==8.3.2
+
+# Optional (plots/save)
+seaborn==0.13.2
